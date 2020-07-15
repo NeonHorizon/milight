@@ -1,0 +1,110 @@
+#!/usr/bin/php
+<?php
+/*------------------------------------------------------------------------------
+  MiLight Examples
+  Some examples of how to use the MiLight driver
+--------------------------------------------------------------------------------
+  Daniel Bull
+  daniel@neonhorizon.co.uk
+------------------------------------------------------------------------------*/
+
+
+// Settings
+$ibox_ip_address = '192.168.1.10';
+
+
+// Load Driver
+require_once('milight.php');
+use milight\ibox as ibox;
+
+
+// Open a connection to your iBox
+$ibox = new ibox($ibox_ip_address);
+
+
+// Run the tests
+// All of these commands return TRUE or and error message string
+// All of these commands can have the zone as the last argument
+// Eg. for zone 2 $ibox->rgbww_on(2); or $ibox->rgbww_brightness(100, 2);
+
+$ibox->rgbww_on();               // Turn on the lights
+$ibox->rgbww_white(100);         // Set them as cold white
+$ibox->rgbww_brightness(100);    // Set them as full brightness
+
+sleep(2);                        // Wait a couple of seconds
+
+$ibox->rgbww_white(0);           // Set them as warm white
+
+sleep(1);                        // Wait a second
+
+
+$ibox->rgbww_white(100);         // Set them as cold white
+$ibox->rgbww_brightness(0);      // Turn the brightness as low as it will go
+
+sleep(1);                        // Wait a second
+
+for($i = 0; $i <= 100; $i++)     // Fade them in
+  $ibox->rgbww_brightness($i);
+
+for($i = 100; $i >= 0; $i--)     // Fade them out
+  $ibox->rgbww_brightness($i);
+
+sleep(1);                        // Wait a second
+
+
+$ibox->rgbww_color(0);           // Set the colour to 0
+$ibox->rgbww_brightness(100);    // Set the brightness to full
+
+sleep(1);
+
+for($i = 0; $i <= 255; $i++)     // Sweep the colours
+  $ibox->rgbww_color($i);
+
+sleep(1);                        // Wait a second
+
+for($i = 0; $i <= 100; $i++)     // Reduce the saturation
+  $ibox->rgbww_saturation($i);
+
+for($i = 100; $i >= 0; $i--)     // Bring in the saturation
+  $ibox->rgbww_saturation($i);
+
+sleep(1);                        // Wait a second
+
+
+$ibox->rgbww_mode(4);            // Set mode 4
+
+sleep(5);                        // Wait 5 seconds
+
+$ibox->rgbww_mode_speed_adjust(5);  // Make it faster
+
+sleep(5);                        // Wait 5 seconds
+
+$ibox->rgbww_mode_speed_adjust(-10);  // Make it slower
+
+sleep(5);                        // Wait 5 seconds
+
+$ibox->rgbww_night();            // Go into night time mode
+
+sleep(1);                        // Wait a second
+
+$ibox->rgbww_off();              // Turn off the lights
+
+
+// Linking a light to a zone
+// Power on the light for zone 4 and within 3 seconds run
+// $ibox->rgbww_link(4);
+
+
+// Unlinking a light from a zone
+// Power on the light for zone 2 and within 3 seconds run
+// $ibox->rgbww_unlink(2);
+
+
+// The following are untested and require an ibox with a built in lamp
+// lamp_on()
+// lamp_off()
+// lamp_mode($mode)
+// lamp_mode_speed_adjust($adjust)
+// lamp_brightness($brightness)
+// lamp_white($temperature)
+// lamp_color($color);
