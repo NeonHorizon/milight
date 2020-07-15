@@ -8,7 +8,7 @@ MiLight V6 PHP API
 
 ### Description
 
-The iBox2 provides a WiFi gateway between the various wireless protocols used by different Mi-Lights and your local network so you can use mobile apps and cloud services (Alexa, Google Assistant etc) to control your lights.
+The iBox2 provides a WiFi gateway between the various wireless protocols used by different Mi-Lights, MiBOXERS and your local network so you can use mobile apps and cloud services (Alexa, Google Assistant etc) to control your lights.
 
 This library provides a way for your own PHP scripts to control your MiLights via the iBox2 and can be incorporated into your own webpages, applications, etc.
 
