@@ -18,7 +18,7 @@ class ibox
   const EXECUTE_RETRY_LOOPS  = 10;
   const EXECUTE_SESSION_TRY  = 5;
   const LINK_LOOPS           = 3;
-  const MAX_RATE             = 20;
+  const MAX_RATE             = 30;
   const WAKEUP_TIME          = 50;
 
   // Communications
