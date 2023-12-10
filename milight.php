@@ -15,14 +15,14 @@ class ibox
 
   // Settings
   const PASSWORD             = '0000';
+  const TIMEOUT              = 1;
   const EXECUTE_RETRY_LOOPS  = 10;
   const EXECUTE_SESSION_TRY  = 5;
   const LINK_LOOPS           = 3;
-  const MAX_RATE             = 30;
-  const WAKEUP_TIME          = 50;
 
   // Communications
   const GET_SESSION          = '200000001602623AD5EDA301AE082D466141A7F6DCAFD3E600001E';
+  const RECEIVE_SESSION      = '28000000110002';
   const SEND                 = '8000000011';
   const RECEIVE              = '8800000003';
 
@@ -55,12 +55,11 @@ class ibox
   const IBOX_LAMP_MODE       = '0004'; // Followed by 00 to 09
 
   // Connection
-  public $ip_address = NULL;
-  public $port = 5987;
-  private $socket = NULL;
-  private $session = NULL;
-  private $serial = NULL;
-  private $next_send = 0;
+  public  $ip_address        = NULL;
+  public  $port              = 5987;
+  private $socket            = NULL;
+  private $session           = NULL;
+  private $serial            = NULL;
 
 
 
@@ -113,12 +112,15 @@ class ibox
   ------------------------------------------------------------------------------*/
   private function socket()
   {
+    // Check to see if we already have a socket
     if($this->socket !== NULL)
       return TRUE;
 
+    // Create the socket
     if(($this->socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP)) === FALSE)
       return 'Unable to create a UDP socket';
 
+    // Bind to the socket
     if(socket_bind($this->socket, '0.0.0.0', $this->port) === FALSE)
       return 'Unable to bind to the UDP socket';
 
@@ -130,28 +132,36 @@ class ibox
   /*------------------------------------------------------------------------------
     Send data
   ------------------------------------------------------------------------------*/
-  private function send($send, &$response)
+  private function send($send, $expect, &$response = '')
   {
-    // Throttle
-    $time = microtime(TRUE);
-    if($this->next_send > $time)
-      usleep(round(($this->next_send - $time) * 1000));
-    $this->next_send = $time + self::MAX_RATE;
-
-    // Flush
+    // Flush the buffer
     socket_recvfrom($this->socket, $receive, 1024, MSG_DONTWAIT, $this->ip_address, $this->port);
 
-    // Send
+    // Send our request
     $send = hex2bin($send);
     if(socket_sendto($this->socket, $send, strlen($send), 0, $this->ip_address, $this->port) === FALSE)
-      return 'Unable to send data to the iBox';
+      return FALSE;
 
-    // Receive
-    if(socket_recvfrom($this->socket, $response, 1024, 0, $this->ip_address, $this->port) === FALSE)
-      return 'Unable to receive data from the iBox';
-    $response = bin2hex($response);
+    // Attempt to receive the expected response up the to the timeout or if the other side disconnects (returns 0)
+    $response = '';
+    $quit_time = microtime(TRUE) + self::TIMEOUT;
+    while(microtime(TRUE) < $quit_time && ($bytes = socket_recvfrom($this->socket, $receive, 1024, MSG_DONTWAIT, $this->ip_address, $this->port)) !== 0)
+    {
+      // Receive data and reset the timeout
+      if($bytes > 0)
+      {
+        $response .= bin2hex($receive);
 
-    return TRUE;
+        if(str_contains($response, $expect))
+          return TRUE;
+
+        $quit_time = microtime(TRUE) + self::TIMEOUT;
+      }
+
+      usleep(10000);
+    }
+
+    return FALSE;
   }
 
 
@@ -161,18 +171,22 @@ class ibox
   ------------------------------------------------------------------------------*/
   private function session($force = FALSE)
   {
+    // Check to see if we already have a session
     if(!$force && $this->session !== NULL)
       return TRUE;
 
-    if(($error = $this->send(self::GET_SESSION, $response)) !== TRUE)
-      return $error;
+    // Request a session
+    if(!$this->send(self::GET_SESSION, self::RECEIVE_SESSION, $response))
+      return 'Could not obtain a session with the iBox: '.$response;
 
+    // Remove anything from the start of the session data we dont need
+    $response = substr($response, strpos($response, self::RECEIVE_SESSION));
+
+    // Check its the correct length
     if(strlen($response) != 44)
-      return 'Invalid session data received from iBox';
+      return 'Invalid session data received from iBox: '.$response;
 
-    if(substr($response, 0, 14) != '28000000110002')
-      return 'Invalid session data received from iBox';
-
+    // Set session and serial
     $this->session = substr($response, 38, 4);
     $this->serial = 1;
 
@@ -184,7 +198,7 @@ class ibox
   /*------------------------------------------------------------------------------
     Execute an action
   ------------------------------------------------------------------------------*/
-  private function execute($action, $command, $zone = 0, $values = '000000')
+  protected function execute($action, $command, $zone = 0, $values = '000000')
   {
     // Validation
     if(strlen($action) !== 2)
@@ -216,21 +230,18 @@ class ibox
     // Send the command and check for a response
     $this->serial++;
     $retry = 0;
-    $response = '';
-    while($retry++ < self::EXECUTE_RETRY_LOOPS && $response !== self::RECEIVE.'00'.$serial.'00')
+    while($retry++ < self::EXECUTE_RETRY_LOOPS)
     {
+      // Try a send
+      if($this->send(self::SEND.$this->session.'00'.$serial.'00'.$send.'00'.$checksum, self::RECEIVE.'00'.$serial.'00'))
+        return TRUE;
+
       // Attempt to get a new session after EXECUTE_SESSION_TRY attempts
       if($retry == self::EXECUTE_SESSION_TRY && ($error = $this->session(TRUE)) !== TRUE)
         return $error;
-
-      // Try a send/receieve
-      if(($error = $this->send(self::SEND.$this->session.'00'.$serial.'00'.$send.'00'.$checksum, $response)) !== TRUE)
-        return $error;
     }
-    if($response !== self::RECEIVE.'00'.$serial.'00')
-      return 'Invalid response from iBox '.$response;
 
-    return TRUE;
+    return 'Gave up attempting to get a response from the iBox';
   }
 
 
@@ -282,11 +293,7 @@ class ibox
   ------------------------------------------------------------------------------*/
   public function rgbww_on($zone = 0)
   {
-    $result = $this->execute(self::COMMAND, self::RGBWW_ON, $zone);
-
-    $this->next_send += self::WAKEUP_TIME;
-
-    return $result;
+    return $this->execute(self::COMMAND, self::RGBWW_ON, $zone);
   }
 
 
@@ -296,11 +303,7 @@ class ibox
   ------------------------------------------------------------------------------*/
   public function lamp_on()
   {
-    $result = $this->execute(self::COMMAND, self::IBOX_LAMP_ON);
-
-    $this->next_send += self::WAKEUP_TIME;
-
-    return $result;
+    return $this->execute(self::COMMAND, self::IBOX_LAMP_ON);
   }
 
 
