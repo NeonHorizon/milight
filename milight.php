@@ -15,10 +15,13 @@ class ibox
 
   // Settings
   const PASSWORD             = '0000';
-  const TIMEOUT              = 1;
+  const SEND_TIMEOUT         = 0.3;
+  const SESSION_TIMEOUT      = 30;
   const EXECUTE_RETRY_LOOPS  = 10;
   const EXECUTE_SESSION_TRY  = 5;
   const LINK_LOOPS           = 3;
+  const MAX_RATE             = 0.03;
+  const WAKEUP_TIME          = 0.05;
 
   // Communications
   const GET_SESSION          = '200000001602623AD5EDA301AE082D466141A7F6DCAFD3E600001E';
@@ -60,6 +63,7 @@ class ibox
   private $socket            = NULL;
   private $session           = NULL;
   private $serial            = NULL;
+  private $next_send         = 0;
 
 
 
@@ -134,6 +138,11 @@ class ibox
   ------------------------------------------------------------------------------*/
   private function send($send, $expect, &$response = '')
   {
+    // Throttle
+    $time = microtime(TRUE);
+    if($time < $this->next_send)
+      usleep(round(($this->next_send - $time) * 1000000));
+
     // Flush the buffer
     socket_recvfrom($this->socket, $receive, 1024, MSG_DONTWAIT, $this->ip_address, $this->port);
 
@@ -142,9 +151,10 @@ class ibox
     if(socket_sendto($this->socket, $send, strlen($send), 0, $this->ip_address, $this->port) === FALSE)
       return FALSE;
 
+
     // Attempt to receive the expected response up the to the timeout or if the other side disconnects (returns 0)
     $response = '';
-    $quit_time = microtime(TRUE) + self::TIMEOUT;
+    $quit_time = microtime(TRUE) + self::SEND_TIMEOUT;
     while(microtime(TRUE) < $quit_time && ($bytes = socket_recvfrom($this->socket, $receive, 1024, MSG_DONTWAIT, $this->ip_address, $this->port)) !== 0)
     {
       // Receive data and reset the timeout
@@ -153,9 +163,12 @@ class ibox
         $response .= bin2hex($receive);
 
         if(str_contains($response, $expect))
+        {
+          $this->next_send = microtime(TRUE) + self::MAX_RATE;
           return TRUE;
+        }
 
-        $quit_time = microtime(TRUE) + self::TIMEOUT;
+        $quit_time = microtime(TRUE) + self::SEND_TIMEOUT;
       }
 
       usleep(10000);
@@ -172,7 +185,7 @@ class ibox
   private function session($force = FALSE)
   {
     // Check to see if we already have a session
-    if(!$force && $this->session !== NULL)
+    if(!$force && $this->session !== NULL && $this->next_send + self::SESSION_TIMEOUT - self::MAX_RATE > microtime(TRUE))
       return TRUE;
 
     // Request a session
@@ -237,8 +250,13 @@ class ibox
         return TRUE;
 
       // Attempt to get a new session after EXECUTE_SESSION_TRY attempts
-      if($retry == self::EXECUTE_SESSION_TRY && ($error = $this->session(TRUE)) !== TRUE)
-        return $error;
+      if($retry == self::EXECUTE_SESSION_TRY)
+      {
+        if(($error = $this->session(TRUE)) !== TRUE)
+          return $error;
+        $serial = self::hex($this->serial);
+        $this->serial++;
+      }
     }
 
     return 'Gave up attempting to get a response from the iBox';
@@ -293,7 +311,11 @@ class ibox
   ------------------------------------------------------------------------------*/
   public function rgbww_on($zone = 0)
   {
-    return $this->execute(self::COMMAND, self::RGBWW_ON, $zone);
+    $result = $this->execute(self::COMMAND, self::RGBWW_ON, $zone);
+
+    $this->next_send += self::WAKEUP_TIME;
+
+    return $result;
   }
 
 
