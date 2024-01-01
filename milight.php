@@ -188,9 +188,10 @@ class ibox
     if(!$force && $this->session !== NULL && $this->next_send + self::SESSION_TIMEOUT - self::MAX_RATE > microtime(TRUE))
       return TRUE;
 
-    // Request a session
+    // Request a session, try a couple of times
     if(!$this->send(self::GET_SESSION, self::RECEIVE_SESSION, $response))
-      return 'Could not obtain a session with the iBox: '.$response;
+      if(!$this->send(self::GET_SESSION, self::RECEIVE_SESSION, $response))
+        return 'Could not obtain a session with the iBox: '.$response;
 
     // Remove anything from the start of the session data we dont need
     $response = substr($response, strpos($response, self::RECEIVE_SESSION));
